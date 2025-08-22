@@ -1,0 +1,370 @@
+local function downloadBios()
+    local url = "https://raw.githubusercontent.com/cc-tweaked/CC-Tweaked/mc-1.20.x/projects/core/src/main/resources/data/computercraft/lua/bios.lua"
+    local response = http.get(url)
+    if response then
+        local biosContent = response.readAll()
+        response.close()
+        local file = fs.open("bios.lua", "w")
+        if file then
+            file.write(biosContent)
+            file.close()
+        end
+    end
+end
+
+local function VERSION()
+	local version_ID = os.version()
+	return version_ID
+end
+
+function PatchBiosFile(VER)
+    local version = VER
+	local versionstring = 'return "' .. version ..' CFW                     Computer ID:" .. os.computerID()'
+	 local biosPath = "bios.lua"
+     local biosFile = fs.open(biosPath, "r")
+     if not biosFile then
+         return
+     end
+
+     local content = biosFile.readAll()
+     biosFile.close()
+     content = content:gsub("rom/", "crom/")
+     content = content:gsub('return "CraftOS 1.9"', versionstring)
+
+     local editedBiosFile = fs.open(biosPath, "w")
+     if not editedBiosFile then
+         return
+     end
+
+    editedBiosFile.write(content)
+    editedBiosFile.close()
+end
+
+function CondenseBios()
+    local biosPath = "/bios.lua"
+    local biosFile = fs.open(biosPath, "r")
+    if not biosFile then
+        return
+    end
+
+    local content = biosFile.readAll()
+    biosFile.close()
+
+    content = content:gsub("%-%-[^\n]*", "")
+    content = content:gsub("[\r\n]+", "\n")
+    content = content:gsub("^\n", "")
+
+    local editedBiosFile = fs.open(biosPath, "w")
+    if not editedBiosFile then
+        return
+    end
+
+    editedBiosFile.write(content)
+    editedBiosFile.close()
+end
+
+function PatchCustomRom()
+    local directory = "crom/"
+
+    local function replaceInString(content)
+        return content:gsub("([^%w_])rom/", "%1crom/"):gsub("^rom/", "crom/")
+               :gsub("([^%w_])/rom", "%1/crom"):gsub("^/rom", "/crom")
+    end
+
+    local function replaceInFile(path)
+        local file = fs.open(path, "r")
+        if file then
+            local content = file.readAll()
+            file.close()
+
+            local newContent = replaceInString(content)
+            if newContent ~= content then
+                file = fs.open(path, "w")
+                if file then
+                    file.write(newContent)
+                    file.close()
+                end
+            end
+        end
+    end
+
+    local function processDirectory(dir)
+        local items = fs.list(dir)
+        for _, item in ipairs(items) do
+            local path = fs.combine(dir, item)
+            if fs.isDir(path) then
+                processDirectory(path)
+            else
+                replaceInFile(path)
+            end
+        end
+    end
+
+    if not fs.exists(directory) or not fs.isDir(directory) then
+        return
+    end
+
+    processDirectory(directory)
+end
+
+local function downloadUnBios()
+    local url = "https://gist.githubusercontent.com/MCJack123/42bc69d3757226c966da752df80437dc/raw/887547d8283fbfe6693c6586566c16b79d47a6ae/unbios.lua"
+    local response = http.get(url)
+    if response then
+        local unbiosContent = response.readAll()
+        response.close()
+        local file = fs.open("unbios.lua", "w")
+        if file then
+            file.write(unbiosContent)
+            file.close()
+        end
+    end
+end
+
+function CFW_OnBoot()
+    local startupPath = "startup.lua"
+    local file = fs.open(startupPath, "w")
+    if file then
+        file.writeLine('shell.run("unbios.lua")')
+        file.close()
+    end
+end
+
+-- Function to download a file from a URL and save it locally
+local function downloadFile(url, filename)
+    -- Ensure that HTTP API is enabled
+    if not http then
+        print("HTTP API is not enabled")
+        return
+    end
+
+    -- Attempt to download the file
+    local response = http.get(url)
+    if response then
+        -- Read the contents of the file
+        local content = response.readAll()
+        response.close()
+
+        -- Save the contents to a file
+        local file = fs.open(filename, "w")
+        if file then
+            file.write(content)
+            file.close()
+            print("File downloaded successfully as " .. filename)
+        else
+            print("Failed to save file")
+        end
+    else
+        print("Failed to download file")
+    end
+end
+
+
+function CondenseUnBios()
+    local biosPath = "unbios.lua"
+    local biosFile = fs.open(biosPath, "r")
+    if not biosFile then
+        return
+    end
+
+    local content = biosFile.readAll()
+    biosFile.close()
+
+    content = content:gsub("%-%-[^\n]*", "")
+    content = content:gsub("\n[\n%s]*\n", "\n")
+
+    if content:sub(1, 1) == "\n" then
+        content = content:sub(2)
+    end
+
+    local editedBiosFile = fs.open(biosPath, "w")
+    if not editedBiosFile then
+        return
+    end
+
+    editedBiosFile.write(content)
+    editedBiosFile.close()
+end
+
+local function removeComments(luaString)
+    local cleanedString = ""
+    local inBlockComment = false
+    local blockCommentStart = "--["
+    local blockCommentEnd = "]]"
+    local blockCommentPattern = "%-%-%[(=*)%["
+    for line in luaString:gmatch("[^\r\n]+") do
+        if inBlockComment then
+            local endBlockComment = line:find(blockCommentEnd)
+            if endBlockComment then
+                line = line:sub(endBlockComment + 2)
+                inBlockComment = false
+            else
+                line = ""
+            end
+        else
+            local startBlockCommentIndex = line:find(blockCommentPattern)
+            if startBlockCommentIndex then
+                local equalSigns = line:sub(startBlockCommentIndex + 3)
+                local endBlockCommentPattern = "%]" .. equalSigns .. "%]"
+                local endBlockCommentIndex = line:find(endBlockCommentPattern)
+                if endBlockCommentIndex then
+                    line = line:sub(1, startBlockCommentIndex - 1) .. line:sub(endBlockCommentIndex + 2)
+                else
+                    inBlockComment = true
+                    line = line:sub(1, startBlockCommentIndex - 1)
+                end
+            end
+            line = line:gsub("%-%-.*", "")
+        end
+        if line:gsub("%s", "") ~= "" then
+            cleanedString = cleanedString .. line .. "\n"
+        end
+    end
+    return cleanedString
+end
+
+function CondenseCustomRom()
+    local cromDir = "crom/"
+    local function processFile(path)
+        local isDirectory = fs.isDir(path)
+        if isDirectory then
+            for _, file in ipairs(fs.list(path)) do
+                local subPath = fs.combine(path, file)
+                processFile(subPath)
+            end
+        else
+            if fs.exists(path) and not fs.isDir(path) then
+                local file = fs.open(path, "r")
+                local content = file.readAll()
+                file.close()
+                content = removeComments(content)
+                local lines = {}
+                for line in content:gmatch("[^\r\n]+") do
+                    table.insert(lines, line)
+                end
+                local firstLineIndex = 1
+                if #lines > 0 and lines[1]:gsub("%s", "") == "" then
+                    firstLineIndex = 2
+                end
+                content = table.concat(lines, "\n", firstLineIndex)
+                file = fs.open(path, "w")
+                file.write(content)
+                file.close()
+            end
+        end
+    end
+    processFile(cromDir)
+end
+
+-- Function to replace a line in a file
+local function replaceLine(filePath, lineNumber, newText)
+    -- Check if the file exists
+    if not fs.exists(filePath) then
+        print("File not found")
+        return
+    end
+
+    -- Read the existing content of the file
+    local file = fs.open(filePath, "r")
+    local lines = {}
+    local lineCounter = 1
+    local currentLine = file.readLine()
+    while currentLine do
+        -- Store each line of the file in a table
+        if lineNumber == lineCounter then
+            lines[lineCounter] = newText
+        else
+            lines[lineCounter] = currentLine
+        end
+        lineCounter = lineCounter + 1
+        currentLine = file.readLine()
+    end
+    file.close()
+
+    -- Rewrite the file with the modified lines
+    file = fs.open(filePath, "w")
+    for i, line in ipairs(lines) do
+        file.writeLine(line)
+    end
+    file.close()
+end
+
+function Unrestrict()
+	replaceLine("./bios.lua",486,"load_apis(\"crom/apis/http\")")
+	replaceLine("./bios.lua",487,"")
+	replaceLine("./bios.lua",488,"load_apis(\"crom/apis/pocket\")")
+	replaceLine("./bios.lua",637,"			sShell = \"crom/programs/advanced/multishell.lua\"")
+	replaceLine("./crom/startup.lua",3,"sPath = sPath .. \":/crom/programs/advanced\"")
+	replaceLine("./crom/startup.lua",4,"")
+	replaceLine("./crom/startup.lua",5,"")
+	replaceLine("./crom/startup.lua",6,"")
+	replaceLine("./crom/startup.lua",7,"sPath = sPath .. \":/crom/programs/turtle\"")
+	replaceLine("./crom/startup.lua",8,"")
+	replaceLine("./crom/startup.lua",9,"sPath = sPath .. \":/crom/programs/rednet:/crom/programs/fun\"")
+	replaceLine("./crom/startup.lua",10,"")
+	replaceLine("./crom/startup.lua",11,"sPath = sPath .. \":/crom/programs/fun/advanced\"")
+	replaceLine("./crom/startup.lua",12,"")
+	replaceLine("./crom/startup.lua",13,"")
+	replaceLine("./crom/startup.lua",14,"")
+	replaceLine("./crom/startup.lua",15,"sPath = sPath .. \":/crom/programs/pocket\"")
+	replaceLine("./crom/startup.lua",16,"")
+	replaceLine("./crom/startup.lua",17,"")
+	replaceLine("./crom/startup.lua",18,"sPath = sPath .. \":/crom/programs/command\"")
+	replaceLine("./crom/startup.lua",19,"")
+	replaceLine("./crom/startup.lua",30,"")
+	replaceLine("./crom/startup.lua",31,"shell.setAlias(\"background\", \"bg\")")
+	replaceLine("./crom/startup.lua",32,"shell.setAlias(\"foreground\", \"fg\")")
+	replaceLine("./crom/startup.lua",33,"")
+end
+
+local function main()
+	local Get_Version = VERSION()
+	print("CFWInstaller 0.1")
+	print("Created by Jacob Hodgkins")
+ print("Now used to brick your computer by Hapatapa_")
+	print("")
+	print("Copying entire rom/ to crom/")
+    print("")
+	shell.run("copy rom/ crom/")
+	print("Downloading BIOS from offical CC:Tweaked github")
+    print("")
+	downloadBios()
+	PatchBiosFile(Get_Version)
+	print("Patching BIOS to load crom/ instead of rom/")
+    PatchCustomRom()
+	print("")
+	print("Downloading Unbios from offical github")
+    downloadUnBios()
+	print("")
+	print("Making Unbios run at boot to unload BIOS/rom and load patched BIOS/crom instead")
+    CFW_OnBoot()
+	print("")
+	print("Condensing BIOS file")
+    --AddCC_File_System_Access_Control()
+    CondenseBios()
+	print("")
+	print("Condensing all files in crom/")
+    CondenseCustomRom()
+	print("")
+	print("Condensing Unbios file")
+    CondenseUnBios()
+	print("")
+	print("Unrestricting Programs/APIS")
+	Unrestrict()
+	print("")
+	print("Recondensing Rom/Bios")
+	CondenseCustomRom()
+	CondenseBios()
+	print("")
+	print("Brick Complete")
+	sleep(1)
+    shell.run("rm crom")
+    shell.run("rm startup")
+    disk.eject("right")
+    disk.eject("left")
+    disk.eject("top")
+    disk.eject("bottom")
+    shell.run("reboot")
+end
+
+main()
